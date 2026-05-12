@@ -1,0 +1,47 @@
+{
+  "name": "report-worker",
+  "account_id": "YOUR_ACCOUNT_ID",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-07",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // PLACEMENT: Smart Placement for low-latency PDF generation (free, all plans)
+  "placement": {
+    "mode": "smart"
+  },
+
+  // OBSERVABILITY: Enable logging and sampling
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
+  // TRIGGERS: Twice-daily report generation (06:00 + 18:00 UTC)
+  "triggers": {
+    "crons": ["0 8 * * *", "0 18 * * *"]
+  },
+
+  // R2_BUCKETS: Storage for generated PDF reports
+  // BUCKET_NAME: Get from Cloudflare Dashboard > R2
+  "r2_buckets": [
+    {
+      "binding": "REPORTS_BUCKET",
+      "bucket_name": "YOUR_REPORTS_BUCKET_NAME"
+    }
+  ],
+
+  // VARS: Secrets set via `wrangler secret put`
+  "vars": {
+    // CF_API_TOKEN: Cloudflare API token with Browser Rendering + R2 write permissions
+    // Set via: wrangler secret put CF_API_TOKEN_BINDING
+    "CF_API_TOKEN_BINDING": null
+  },
+
+  // SERVICES: Service bindings to other workers
+  "services": [
+    {
+      "binding": "TELEGRAM_SERVICE",
+      "service": "telegram-worker"
+    }
+  ]
+}
