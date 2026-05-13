@@ -47,25 +47,31 @@ export default {
   async fetch(
     request: Request,
     env: Env,
-    ctx: ExecutionContext,
+    ctx: ExecutionContext
   ): Promise<Response> {
     const url = new URL(request.url);
 
     // Health endpoint
     if (request.method === "GET" && url.pathname === "/health") {
-      return new Response(JSON.stringify({ status: "ok", worker: "report-worker" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ status: "ok", worker: "report-worker" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Manual report trigger (GET /report)
     if (request.method === "GET" && url.pathname === "/report") {
       ctx.waitUntil(generateAndStoreReport(env, ctx));
-      return new Response(JSON.stringify({ success: true, message: "Report generation started" }), {
-        status: 202,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ success: true, message: "Report generation started" }),
+        {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     return new Response("Report Worker — use GET /health or GET /report", {
@@ -76,13 +82,16 @@ export default {
   async scheduled(
     _controller: ScheduledController,
     env: Env,
-    ctx: ExecutionContext,
+    ctx: ExecutionContext
   ): Promise<void> {
     ctx.waitUntil(generateAndStoreReport(env, ctx));
   },
 };
 
-async function generateAndStoreReport(env: Env, ctx: ExecutionContext): Promise<void> {
+async function generateAndStoreReport(
+  env: Env,
+  ctx: ExecutionContext
+): Promise<void> {
   try {
     const summary = await fetchPortfolioSummary();
     const html = buildReportHtml(summary);
@@ -173,13 +182,11 @@ function buildReportHtml(summary: PortfolioSummary): string {
 </html>`;
 }
 
-async function generatePdf(
-  html: string,
-  env: Env,
-): Promise<ArrayBuffer> {
+async function generatePdf(html: string, env: Env): Promise<ArrayBuffer> {
   if (!env.CF_API_TOKEN_BINDING) {
     logger.warn("No CF_API_TOKEN — returning text fallback");
-    return new TextEncoder().encode("PDF generation requires CF_API_TOKEN").buffer as ArrayBuffer;
+    return new TextEncoder().encode("PDF generation requires CF_API_TOKEN")
+      .buffer as ArrayBuffer;
   }
 
   const response = await fetch(
@@ -198,12 +205,14 @@ async function generatePdf(
           margin: { top: "1cm", right: "1cm", bottom: "1cm", left: "1cm" },
         },
       }),
-    },
+    }
   );
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Browser Rendering API error: ${response.status} — ${text}`);
+    throw new Error(
+      `Browser Rendering API error: ${response.status} — ${text}`
+    );
   }
 
   return response.arrayBuffer() as Promise<ArrayBuffer>;
@@ -212,7 +221,7 @@ async function generatePdf(
 async function sendNotification(
   env: Env,
   key: string,
-  summary: PortfolioSummary,
+  summary: PortfolioSummary
 ): Promise<void> {
   if (!env.TELEGRAM_SERVICE) return;
 
@@ -235,6 +244,6 @@ async function sendNotification(
         internalAuthKey: "report-worker",
         payload: { message, chatId: undefined },
       }),
-    }),
+    })
   );
 }
