@@ -9,9 +9,12 @@
  * 5. Sends notification link via telegram-worker
  */
 
-import type { Fetcher } from "@cloudflare/workers-types";
+import { createLogger } from "@jango-blockchained/hoox-shared/middleware";
+import type { ExecutionContext, Fetcher } from "@cloudflare/workers-types";
 
 // --- Types ---
+
+const logger = createLogger({ service: "report-worker" });
 
 interface Env {
   // R2 bucket for storing generated PDFs
@@ -20,6 +23,8 @@ interface Env {
   TELEGRAM_SERVICE: Fetcher;
   // Cloudflare API token with Browser Rendering + R2 write permissions
   CF_API_TOKEN_BINDING: string;
+  // Cloudflare account ID for Browser Rendering API URL
+  ACCOUNT_ID: string;
 }
 
 interface PortfolioSummary {
@@ -33,32 +38,65 @@ interface PortfolioSummary {
 
 // --- Constants ---
 
-const ACCOUNT_ID = "debc6545e63bea36be059cbc82d80ec8";
-const BROWSER_RENDERING_URL = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/browser-rendering`;
+const BROWSER_RENDERING_URL = `https://api.cloudflare.com/client/v4/accounts`;
 const REPORTS_PREFIX = "reports/";
 
 // --- Worker Entry ---
 
 export default {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Health endpoint
+    if (request.method === "GET" && url.pathname === "/health") {
+      return new Response(JSON.stringify({ status: "ok", worker: "report-worker" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Manual report trigger (GET /report)
+    if (request.method === "GET" && url.pathname === "/report") {
+      ctx.waitUntil(generateAndStoreReport(env, ctx));
+      return new Response(JSON.stringify({ success: true, message: "Report generation started" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response("Report Worker — use GET /health or GET /report", {
+      headers: { "Content-Type": "text/plain" },
+    });
+  },
+
   async scheduled(
     _controller: ScheduledController,
     env: Env,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
   ): Promise<void> {
-    try {
-      const summary = await fetchPortfolioSummary();
-      const html = buildReportHtml(summary);
-      const pdfBuffer = await generatePdf(html, env);
-      const key = `${REPORTS_PREFIX}daily-${Date.now()}.pdf`;
-      await env.REPORTS_BUCKET.put(key, pdfBuffer, {
-        httpMetadata: { contentType: "application/pdf" },
-      });
-      await sendNotification(env, key, summary);
-    } catch (err) {
-      console.error("[report-worker] Failed to generate report:", err);
-    }
+    ctx.waitUntil(generateAndStoreReport(env, ctx));
   },
 };
+
+async function generateAndStoreReport(env: Env, ctx: ExecutionContext): Promise<void> {
+  try {
+    const summary = await fetchPortfolioSummary();
+    const html = buildReportHtml(summary);
+    const pdfBuffer = await generatePdf(html, env);
+    const key = `${REPORTS_PREFIX}daily-${Date.now()}.pdf`;
+    await env.REPORTS_BUCKET.put(key, pdfBuffer, {
+      httpMetadata: { contentType: "application/pdf" },
+    });
+    // Notification is fire-and-forget: don't block on it
+    ctx.waitUntil(sendNotification(env, key, summary));
+  } catch (err) {
+    logger.error("Failed to generate report", { error: err });
+  }
+}
 
 // --- Helpers ---
 
@@ -140,12 +178,12 @@ async function generatePdf(
   env: Env,
 ): Promise<ArrayBuffer> {
   if (!env.CF_API_TOKEN_BINDING) {
-    console.warn("[report-worker] No CF_API_TOKEN — returning text fallback");
+    logger.warn("No CF_API_TOKEN — returning text fallback");
     return new TextEncoder().encode("PDF generation requires CF_API_TOKEN").buffer as ArrayBuffer;
   }
 
   const response = await fetch(
-    `${BROWSER_RENDERING_URL}/pdf`,
+    `${BROWSER_RENDERING_URL}/${env.ACCOUNT_ID}/browser-rendering/pdf`,
     {
       method: "POST",
       headers: {
