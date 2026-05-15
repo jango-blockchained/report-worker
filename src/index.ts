@@ -9,16 +9,22 @@
  * 5. Sends notification link via telegram-worker
  */
 
-import { createLogger } from "@jango-blockchained/hoox-shared/middleware";
+import { createLogger, withRequestLog } from "@jango-blockchained/hoox-shared/middleware";
+import { createRouter } from "@jango-blockchained/hoox-shared/router";
+import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 import type { ExecutionContext, Fetcher } from "@cloudflare/workers-types";
+import { serviceFetch } from "@jango-blockchained/hoox-shared/service-bindings";
 
 // --- Types ---
 
 const logger = createLogger({ service: "report-worker" });
 
-interface Env {
+interface Env extends Cloudflare.Env {
+  [key: string]: unknown;
   // R2 bucket for storing generated PDFs
   REPORTS_BUCKET: R2Bucket;
+  // Service binding to d1-worker for portfolio data
+  D1_SERVICE: Fetcher;
   // Service binding to telegram-worker for notifications
   TELEGRAM_SERVICE: Fetcher;
   // Cloudflare API token with Browser Rendering + R2 write permissions
@@ -41,43 +47,34 @@ interface PortfolioSummary {
 const BROWSER_RENDERING_URL = `https://api.cloudflare.com/client/v4/accounts`;
 const REPORTS_PREFIX = "reports/";
 
+// --- Router Setup ---
+
+const router = createRouter<Env>();
+
+router.get("/health", async (request: Request, env: Env, ctx: ExecutionContext) => {
+  return healthCheck({ worker: "report-worker" });
+});
+
+router.get("/report", async (request: Request, env: Env, ctx: ExecutionContext) => {
+  ctx.waitUntil(generateAndStoreReport(env, ctx));
+  return new Response(
+    JSON.stringify({ success: true, message: "Report generation started" }),
+    {
+      status: 202,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
+});
+
 // --- Worker Entry ---
 
 export default {
-  async fetch(
-    request: Request,
-    env: Env,
-    ctx: ExecutionContext
-  ): Promise<Response> {
-    const url = new URL(request.url);
-
-    // Health endpoint
-    if (request.method === "GET" && url.pathname === "/health") {
-      return new Response(
-        JSON.stringify({ status: "ok", worker: "report-worker" }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // Manual report trigger (GET /report)
-    if (request.method === "GET" && url.pathname === "/report") {
-      ctx.waitUntil(generateAndStoreReport(env, ctx));
-      return new Response(
-        JSON.stringify({ success: true, message: "Report generation started" }),
-        {
-          status: 202,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    return new Response("Report Worker — use GET /health or GET /report", {
-      headers: { "Content-Type": "text/plain" },
-    });
-  },
+  fetch: withRequestLog(
+    (request: Request, env: Env, ctx: ExecutionContext) => {
+      return router.handle(request, env, ctx);
+    },
+    { service: "report-worker", module: "router" }
+  ),
 
   async scheduled(
     _controller: ScheduledController,
@@ -93,7 +90,7 @@ async function generateAndStoreReport(
   ctx: ExecutionContext
 ): Promise<void> {
   try {
-    const summary = await fetchPortfolioSummary();
+    const summary = await fetchPortfolioSummary(env);
     const html = buildReportHtml(summary);
     const pdfBuffer = await generatePdf(html, env);
     const key = `${REPORTS_PREFIX}daily-${Date.now()}.pdf`;
@@ -109,16 +106,91 @@ async function generateAndStoreReport(
 
 // --- Helpers ---
 
-async function fetchPortfolioSummary(): Promise<PortfolioSummary> {
-  // Stub — in production, query D1 via d1-worker service binding
-  return {
-    totalValue: 125_000,
-    dailyPnL: 1_230,
-    totalPnL: 18_500,
-    openPositions: 4,
-    winRate: 72.5,
-    topAsset: "BTC/USDT",
+async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
+  // Default fallback if D1_SERVICE binding is not configured
+  const fallback: PortfolioSummary = {
+    totalValue: 0,
+    dailyPnL: 0,
+    totalPnL: 0,
+    openPositions: 0,
+    winRate: 0,
+    topAsset: "N/A",
   };
+
+  if (!env.D1_SERVICE) {
+    logger.warn("D1_SERVICE binding not configured — returning empty summary");
+    return fallback;
+  }
+
+  try {
+    // Fetch balances from d1-worker (no auth required on GET /api/balances)
+    const balancesRes = await serviceFetch(
+      env.D1_SERVICE,
+      "/api/balances",
+      undefined,
+      { method: "GET" }
+    );
+
+    // Fetch open positions from d1-worker (no auth required on GET /api/positions)
+    const positionsRes = await serviceFetch(
+      env.D1_SERVICE,
+      "/api/positions",
+      undefined,
+      { method: "GET" }
+    );
+
+    if (!balancesRes.ok || !positionsRes.ok) {
+      logger.error("D1 service returned non-OK response", {
+        balancesStatus: balancesRes.status,
+        positionsStatus: positionsRes.status,
+      });
+      return fallback;
+    }
+
+    const [balancesData, positionsData] = await Promise.all([
+      balancesRes.json() as Promise<{ success: boolean; totalBalance: number; balances: { exchange: string; asset: string; total: number }[] }>,
+      positionsRes.json() as Promise<{ success: boolean; positions: { symbol: string; side: string; unrealized_pnl: number }[] }>,
+    ]);
+
+    // Aggregate portfolio summary from D1 data
+    const totalValue = balancesData.totalBalance ?? 0;
+    const openPositions = positionsData.positions?.length ?? 0;
+
+    // Calculate total PnL from positions
+    const totalPnL = (positionsData.positions ?? []).reduce(
+      (sum, p) => sum + (p.unrealized_pnl ?? 0),
+      0
+    );
+
+    // Find top asset by balance
+    const topAssetEntry = (balancesData.balances ?? []).sort(
+      (a, b) => (b.total ?? 0) - (a.total ?? 0)
+    )[0];
+    const topAsset = topAssetEntry
+      ? `${topAssetEntry.asset}`
+      : "N/A";
+
+    // Win rate: positions with positive PnL / total positions
+    const winningPositions = (positionsData.positions ?? []).filter(
+      (p) => (p.unrealized_pnl ?? 0) > 0
+    ).length;
+    const winRate =
+      openPositions > 0
+        ? Math.round((winningPositions / openPositions) * 1000) / 10
+        : 0;
+
+    return {
+      totalValue,
+      dailyPnL: totalPnL, // Using total unrealized PnL as daily proxy
+      totalPnL,
+      openPositions,
+      winRate,
+      topAsset,
+    };
+  } catch (err) {
+    logger.error("Failed to fetch portfolio summary from D1", { error: err });
+    return fallback;
+  }
 }
 
 function buildReportHtml(summary: PortfolioSummary): string {
@@ -236,14 +308,8 @@ async function sendNotification(
     `[View Report](${signedUrl})`,
   ].join("\n");
 
-  await env.TELEGRAM_SERVICE.fetch(
-    new Request("http://telegram-service/process", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        internalAuthKey: "report-worker",
-        payload: { message, chatId: undefined },
-      }),
-    })
-  );
+  await serviceFetch(env.TELEGRAM_SERVICE, "/process", {
+    internalAuthKey: "report-worker",
+    payload: { message, chatId: undefined },
+  });
 }
