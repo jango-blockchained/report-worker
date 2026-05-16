@@ -9,7 +9,10 @@
  * 5. Sends notification link via telegram-worker
  */
 
-import { createLogger, withRequestLog } from "@jango-blockchained/hoox-shared/middleware";
+import {
+  createLogger,
+  withRequestLog,
+} from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 import type { ExecutionContext, Fetcher } from "@cloudflare/workers-types";
@@ -51,20 +54,26 @@ const REPORTS_PREFIX = "reports/";
 
 const router = createRouter<Env>();
 
-router.get("/health", async (request: Request, env: Env, ctx: ExecutionContext) => {
-  return healthCheck({ worker: "report-worker" });
-});
+router.get(
+  "/health",
+  async (request: Request, env: Env, ctx: ExecutionContext) => {
+    return healthCheck({ worker: "report-worker" });
+  }
+);
 
-router.get("/report", async (request: Request, env: Env, ctx: ExecutionContext) => {
-  ctx.waitUntil(generateAndStoreReport(env, ctx));
-  return new Response(
-    JSON.stringify({ success: true, message: "Report generation started" }),
-    {
-      status: 202,
-      headers: { "Content-Type": "application/json" },
-    }
-  );
-});
+router.get(
+  "/report",
+  async (request: Request, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(generateAndStoreReport(env, ctx));
+    return new Response(
+      JSON.stringify({ success: true, message: "Report generation started" }),
+      {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+);
 
 // --- Worker Entry ---
 
@@ -148,8 +157,15 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
     }
 
     const [balancesData, positionsData] = await Promise.all([
-      balancesRes.json() as Promise<{ success: boolean; totalBalance: number; balances: { exchange: string; asset: string; total: number }[] }>,
-      positionsRes.json() as Promise<{ success: boolean; positions: { symbol: string; side: string; unrealized_pnl: number }[] }>,
+      balancesRes.json() as Promise<{
+        success: boolean;
+        totalBalance: number;
+        balances: { exchange: string; asset: string; total: number }[];
+      }>,
+      positionsRes.json() as Promise<{
+        success: boolean;
+        positions: { symbol: string; side: string; unrealized_pnl: number }[];
+      }>,
     ]);
 
     // Aggregate portfolio summary from D1 data
@@ -166,9 +182,7 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
     const topAssetEntry = (balancesData.balances ?? []).sort(
       (a, b) => (b.total ?? 0) - (a.total ?? 0)
     )[0];
-    const topAsset = topAssetEntry
-      ? `${topAssetEntry.asset}`
-      : "N/A";
+    const topAsset = topAssetEntry ? `${topAssetEntry.asset}` : "N/A";
 
     // Win rate: positions with positive PnL / total positions
     const winningPositions = (positionsData.positions ?? []).filter(
