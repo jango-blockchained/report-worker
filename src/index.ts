@@ -34,6 +34,10 @@ interface Env extends Cloudflare.Env {
   CF_API_TOKEN_BINDING: string;
   // Cloudflare account ID for Browser Rendering API URL
   ACCOUNT_ID: string;
+  // Internal auth key for service-to-service calls (telegram-worker /process)
+  INTERNAL_KEY_BINDING?: string;
+  // Optional custom hostname for report URLs (overrides default worker.dev domain)
+  REPORT_WORKER_URL?: string;
 }
 
 interface PortfolioSummary {
@@ -112,6 +116,16 @@ async function generateAndStoreReport(
     logger.error("Failed to generate report", { error: err });
   }
 }
+
+// --- Exports for testing ---
+
+export {
+  generatePdf,
+  sendNotification,
+  fetchPortfolioSummary,
+  buildReportHtml,
+  generateAndStoreReport,
+};
 
 // --- Helpers ---
 
@@ -311,7 +325,10 @@ async function sendNotification(
 ): Promise<void> {
   if (!env.TELEGRAM_SERVICE) return;
 
-  const signedUrl = `https://report-worker.cryptolinx.workers.dev/${key}`;
+  // Use env-configured URL or fall back to default worker.dev domain
+  const reportBaseUrl =
+    env.REPORT_WORKER_URL ?? "report-worker.cryptolinx.workers.dev";
+  const signedUrl = `https://${reportBaseUrl}/${key}`;
   const message = [
     `📊 *Daily Portfolio Report*`,
     ``,
@@ -322,8 +339,15 @@ async function sendNotification(
     `[View Report](${signedUrl})`,
   ].join("\n");
 
-  await serviceFetch(env.TELEGRAM_SERVICE, "/process", {
-    internalAuthKey: "report-worker",
+  // Construct the payload expected by telegram-worker's /process endpoint
+  const internalAuthKey = env.INTERNAL_KEY_BINDING;
+  const payload = {
     payload: { message, chatId: undefined },
+  };
+
+  await serviceFetch(env.TELEGRAM_SERVICE, "/process", payload, {
+    headers: {
+      ...(internalAuthKey ? { "X-Internal-Auth-Key": internalAuthKey } : {}),
+    },
   });
 }
