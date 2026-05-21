@@ -18,11 +18,13 @@ import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 import type { ExecutionContext, Fetcher } from "@cloudflare/workers-types";
 import { serviceFetch } from "@jango-blockchained/hoox-shared/service-bindings";
 
+import { createJsonResponse } from "@jango-blockchained/hoox-shared/errors";
+
 // --- Types ---
 
 const logger = createLogger({ service: "report-worker" });
 
-interface Env extends Cloudflare.Env {
+export interface Env extends Cloudflare.Env {
   [key: string]: unknown;
   // R2 bucket for storing generated PDFs
   REPORTS_BUCKET: R2Bucket;
@@ -69,12 +71,9 @@ router.get(
   "/report",
   async (request: Request, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(generateAndStoreReport(env, ctx));
-    return new Response(
-      JSON.stringify({ success: true, message: "Report generation started" }),
-      {
-        status: 202,
-        headers: { "Content-Type": "application/json" },
-      }
+    return createJsonResponse(
+      { success: true, message: "Report generation started" },
+      202
     );
   }
 );
@@ -146,20 +145,22 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
   }
 
   try {
-    // Fetch balances from d1-worker (no auth required on GET /api/balances)
+    const authHeaders = env.INTERNAL_KEY_BINDING
+      ? { "X-Internal-Auth-Key": env.INTERNAL_KEY_BINDING }
+      : {};
+
     const balancesRes = await serviceFetch(
       env.D1_SERVICE,
       "/api/balances",
       undefined,
-      { method: "GET" }
+      { method: "GET", headers: authHeaders }
     );
 
-    // Fetch open positions from d1-worker (no auth required on GET /api/positions)
     const positionsRes = await serviceFetch(
       env.D1_SERVICE,
       "/api/positions",
       undefined,
-      { method: "GET" }
+      { method: "GET", headers: authHeaders }
     );
 
     if (!balancesRes.ok || !positionsRes.ok) {
