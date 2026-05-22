@@ -12,6 +12,7 @@
 import {
   createLogger,
   withRequestLog,
+  createInternalAuthMiddleware,
 } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
@@ -59,6 +60,7 @@ const REPORTS_PREFIX = "reports/";
 // --- Router Setup ---
 
 const router = createRouter<Env>();
+const requireAuth = createInternalAuthMiddleware();
 
 router.get(
   "/health",
@@ -75,7 +77,8 @@ router.get(
       { success: true, message: "Report generation started" },
       202
     );
-  }
+  },
+  [requireAuth]
 );
 
 // --- Worker Entry ---
