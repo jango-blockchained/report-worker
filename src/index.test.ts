@@ -117,9 +117,25 @@ describe("Report Worker", () => {
   });
 
   describe("Report Endpoint", () => {
+    // Helper to create authed env + request for the /report endpoint
+    function authedReportEnv(overrides: Partial<MockEnv> = {}): MockEnv {
+      return {
+        INTERNAL_KEY_BINDING: "test-internal-key",
+        CF_API_TOKEN_BINDING: "test-token",
+        ACCOUNT_ID: "test-account",
+        ...overrides,
+      };
+    }
+
+    function authedReportRequest(): Request {
+      return new Request("https://example.com/report", {
+        headers: { "X-Internal-Auth-Key": "test-internal-key" },
+      });
+    }
+
     it("GET /report returns 202 status", async () => {
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      const request = authedReportRequest();
+      const env = authedReportEnv();
       const ctx = createMockContext();
 
       const response = await worker.fetch(request, env, ctx);
@@ -127,8 +143,8 @@ describe("Report Worker", () => {
     });
 
     it("GET /report returns JSON response", async () => {
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      const request = authedReportRequest();
+      const env = authedReportEnv();
       const ctx = createMockContext();
 
       const response = await worker.fetch(request, env, ctx);
@@ -138,8 +154,8 @@ describe("Report Worker", () => {
     });
 
     it("GET /report response is valid JSON", async () => {
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      const request = authedReportRequest();
+      const env = authedReportEnv();
       const ctx = createMockContext();
 
       const response = await worker.fetch(request, env, ctx);
@@ -147,8 +163,8 @@ describe("Report Worker", () => {
     });
 
     it("GET /report includes success field", async () => {
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      const request = authedReportRequest();
+      const env = authedReportEnv();
       const ctx = createMockContext();
 
       const response = await worker.fetch(request, env, ctx);
@@ -158,8 +174,8 @@ describe("Report Worker", () => {
     });
 
     it("GET /report includes message field", async () => {
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      const request = authedReportRequest();
+      const env = authedReportEnv();
       const ctx = createMockContext();
 
       const response = await worker.fetch(request, env, ctx);
@@ -175,8 +191,8 @@ describe("Report Worker", () => {
         passThroughOnException: mock(() => {}),
       } as unknown as ExecutionContext;
 
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      const request = authedReportRequest();
+      const env = authedReportEnv();
 
       await worker.fetch(request, env, ctx);
       expect(mockWaitUntil).toHaveBeenCalled();
@@ -519,8 +535,14 @@ describe("Report Worker", () => {
     });
 
     it("middleware doesn't interfere with report endpoint", async () => {
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      const request = new Request("https://example.com/report", {
+        headers: { "X-Internal-Auth-Key": "test-internal-key" },
+      });
+      const env: MockEnv = {
+        INTERNAL_KEY_BINDING: "test-internal-key",
+        CF_API_TOKEN_BINDING: "test-token",
+        ACCOUNT_ID: "test-account",
+      };
       const ctx = createMockContext();
 
       const response = await worker.fetch(request, env, ctx);
@@ -593,8 +615,11 @@ describe("Report Worker", () => {
         passThroughOnException: mock(() => {}),
       } as unknown as ExecutionContext;
 
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      // Report endpoint requires auth
+      const request = new Request("https://example.com/report", {
+        headers: { "X-Internal-Auth-Key": "test-internal-key" },
+      });
+      const env: MockEnv = { INTERNAL_KEY_BINDING: "test-internal-key" };
 
       await worker.fetch(request, env, ctx);
       expect(mockWaitUntil).toHaveBeenCalled();
@@ -627,8 +652,10 @@ describe("Report Worker", () => {
     });
 
     it("report endpoint returns 202", async () => {
-      const request = new Request("https://example.com/report");
-      const env: MockEnv = {};
+      const request = new Request("https://example.com/report", {
+        headers: { "X-Internal-Auth-Key": "test-internal-key" },
+      });
+      const env: MockEnv = { INTERNAL_KEY_BINDING: "test-internal-key" };
       const ctx = createMockContext();
 
       const response = await worker.fetch(request, env, ctx);
@@ -921,8 +948,9 @@ describe("Report Worker", () => {
       const html = buildReportHtml(summary);
       expect(html).toBeDefined();
       expect(html).toContain("Hoox Portfolio Report");
-      expect(html).toContain("10000");
-      expect(html).toContain("500");
+      // Numbers are formatted with $ and locale formatting
+      expect(html).toContain("$10,000");
+      expect(html).toContain("$500");
     });
 
     it("includes all required fields in HTML", () => {
@@ -999,7 +1027,8 @@ describe("Report Worker", () => {
 
       const html = buildReportHtml(summary);
       expect(html).toBeDefined();
-      expect(html).toContain("1000000000");
+      // Numbers are formatted with locale separators
+      expect(html).toContain("$1,000,000,000");
     });
 
     it("handles special characters in asset names", () => {

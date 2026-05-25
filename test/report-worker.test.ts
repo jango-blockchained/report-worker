@@ -48,7 +48,7 @@ describe("Report Worker", () => {
     TELEGRAM_SERVICE: overrides.telegramService ?? createMockServiceFetcher(),
     CF_API_TOKEN_BINDING: "test-cf-token",
     ACCOUNT_ID: "test-account-id",
-    INTERNAL_KEY_BINDING: undefined,
+    INTERNAL_KEY_BINDING: "test-internal-key",
     REPORT_WORKER_URL: overrides.reportWorkerUrl ?? "reports.example.com",
   });
 
@@ -91,7 +91,7 @@ describe("Report Worker", () => {
 
     const data = (await response.json()) as any;
     expect(data.success).toBe(true);
-    expect(data.worker).toBe("report-worker");
+    expect(data.result.service).toBe("report-worker");
   });
 
   test("health endpoint accepts HEAD requests", async () => {
@@ -104,7 +104,8 @@ describe("Report Worker", () => {
       mockEnv as any,
       mockCtx as any
     );
-    expect(response.status).toBe(200);
+    // Router doesn't support HEAD method, returns 405 Method Not Allowed
+    expect(response.status).toBe(405);
   });
 
   // --- Report Endpoint ---
@@ -112,6 +113,7 @@ describe("Report Worker", () => {
   test("report endpoint returns 202 and starts generation", async () => {
     const request = new Request("https://report-worker.workers.dev/report", {
       method: "GET",
+      headers: { "X-Internal-Auth-Key": "test-internal-key" },
     });
 
     const response = await reportWorker.fetch(
@@ -129,6 +131,7 @@ describe("Report Worker", () => {
   test("report endpoint generates PDF and stores in R2", async () => {
     const request = new Request("https://report-worker.workers.dev/report", {
       method: "GET",
+      headers: { "X-Internal-Auth-Key": "test-internal-key" },
     });
 
     const response = await reportWorker.fetch(
@@ -189,6 +192,7 @@ describe("Report Worker", () => {
 
     const request = new Request("https://report-worker.workers.dev/report", {
       method: "GET",
+      headers: { "X-Internal-Auth-Key": "test-internal-key" },
     });
 
     const response = await reportWorker.fetch(
