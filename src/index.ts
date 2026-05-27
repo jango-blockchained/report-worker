@@ -16,7 +16,6 @@ import {
 } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
-import type { ExecutionContext, Fetcher } from "@cloudflare/workers-types";
 import { serviceFetch } from "@jango-blockchained/hoox-shared/service-bindings";
 
 import { createJsonResponse } from "@jango-blockchained/hoox-shared/errors";
@@ -27,20 +26,6 @@ const logger = createLogger({ service: "report-worker" });
 
 export interface Env extends Cloudflare.Env {
   [key: string]: unknown;
-  // R2 bucket for storing generated PDFs
-  REPORTS_BUCKET: R2Bucket;
-  // Service binding to d1-worker for portfolio data
-  D1_SERVICE: Fetcher;
-  // Service binding to telegram-worker for notifications
-  TELEGRAM_SERVICE: Fetcher;
-  // Cloudflare API token with Browser Rendering + R2 write permissions
-  CF_API_TOKEN_BINDING: string;
-  // Cloudflare account ID for Browser Rendering API URL
-  ACCOUNT_ID: string;
-  // Internal auth key for service-to-service calls (telegram-worker /process)
-  INTERNAL_KEY_BINDING?: string;
-  // Optional custom hostname for report URLs (overrides default worker.dev domain)
-  REPORT_WORKER_URL?: string;
 }
 
 interface PortfolioSummary {
@@ -64,7 +49,7 @@ const requireAuth = createInternalAuthMiddleware();
 
 router.get(
   "/health",
-  async (request: Request, env: Env, ctx: ExecutionContext) => {
+  async (_request: Request, _env: Env, _ctx: ExecutionContext) => {
     return healthCheck({ worker: "report-worker" });
   }
 );
@@ -148,7 +133,7 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
   }
 
   try {
-    const authHeaders = env.INTERNAL_KEY_BINDING
+    const authHeaders: Record<string, string> = env.INTERNAL_KEY_BINDING
       ? { "X-Internal-Auth-Key": env.INTERNAL_KEY_BINDING }
       : {};
 
