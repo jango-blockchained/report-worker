@@ -24,9 +24,7 @@ import { createJsonResponse } from "@jango-blockchained/hoox-shared/errors";
 
 const logger = createLogger({ service: "report-worker" });
 
-export interface Env extends Cloudflare.Env {
-  [key: string]: unknown;
-}
+export interface Env extends Cloudflare.Env {}
 
 interface PortfolioSummary {
   totalValue: number;
