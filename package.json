@@ -2,10 +2,13 @@
   "name": "report-worker",
   "version": "0.1.0",
   "private": true,
+  "description": "Automated PDF report generation via Cloudflare Browser Rendering",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -13,7 +16,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260527.1",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "wrangler": "^4.95.0"
   }
 }

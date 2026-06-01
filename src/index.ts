@@ -24,7 +24,9 @@ import { createJsonResponse } from "@jango-blockchained/hoox-shared/errors";
 
 const logger = createLogger({ service: "report-worker" });
 
-export interface Env extends Cloudflare.Env {}
+export interface Env extends Cloudflare.Env {
+  [key: string]: unknown;
+}
 
 interface PortfolioSummary {
   totalValue: number;
@@ -332,7 +334,7 @@ async function sendNotification(
     payload: { message, chatId: undefined },
   };
 
-  await serviceFetch(env.TELEGRAM_SERVICE, "/process", payload, {
+  await serviceFetch(env.TELEGRAM_SERVICE, "/alert", payload, {
     headers: {
       ...(internalAuthKey ? { "X-Internal-Auth-Key": internalAuthKey } : {}),
     },
