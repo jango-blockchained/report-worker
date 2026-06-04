@@ -13,7 +13,7 @@ import worker, {
   fetchPortfolioSummary,
   buildReportHtml,
   generateAndStoreReport,
-} from "./index";
+} from "../src/index";
 import type { ExecutionContext } from "@cloudflare/workers-types";
 
 // Mock ExecutionContext
