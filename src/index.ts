@@ -9,6 +9,7 @@
  * 5. Sends notification link via telegram-worker
  */
 
+import { ScheduledEvent } from "@cloudflare/workers-types";
 import {
   createLogger,
   withRequestLog,
@@ -17,6 +18,7 @@ import {
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 import { serviceFetch } from "@jango-blockchained/hoox-shared/service-bindings";
+import { createCronHandler } from "@jango-blockchained/hoox-shared/cron-handler";
 
 import { createJsonResponse } from "@jango-blockchained/hoox-shared/errors";
 
@@ -68,6 +70,14 @@ router.get(
 
 // --- Worker Entry ---
 
+const cronHandler = createCronHandler<Env>({
+  name: "report-worker",
+  logger,
+  handler: async (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(generateAndStoreReport(env, ctx));
+  },
+});
+
 export default {
   fetch: withRequestLog(
     (request: Request, env: Env, ctx: ExecutionContext) => {
@@ -77,11 +87,11 @@ export default {
   ),
 
   async scheduled(
-    _controller: ScheduledController,
+    event: ScheduledEvent,
     env: Env,
     ctx: ExecutionContext
   ): Promise<void> {
-    ctx.waitUntil(generateAndStoreReport(env, ctx));
+    return await cronHandler(event, env, ctx);
   },
 };
 
