@@ -29,8 +29,7 @@ interface MockEnv {
   REPORTS_BUCKET?: R2Bucket;
   D1_SERVICE?: any;
   TELEGRAM_SERVICE?: any;
-  CF_API_TOKEN_BINDING?: string;
-  ACCOUNT_ID?: string;
+  BROWSER?: any;
   INTERNAL_KEY_BINDING?: string;
   REPORT_WORKER_URL?: string;
   [key: string]: any;
@@ -121,8 +120,6 @@ describe("Report Worker", () => {
     function authedReportEnv(overrides: Partial<MockEnv> = {}): MockEnv {
       return {
         INTERNAL_KEY_BINDING: "test-internal-key",
-        CF_API_TOKEN_BINDING: "test-token",
-        ACCOUNT_ID: "test-account",
         ...overrides,
       };
     }
@@ -540,8 +537,6 @@ describe("Report Worker", () => {
       });
       const env: MockEnv = {
         INTERNAL_KEY_BINDING: "test-internal-key",
-        CF_API_TOKEN_BINDING: "test-token",
-        ACCOUNT_ID: "test-account",
       };
       const ctx = createMockContext();
 
@@ -577,8 +572,7 @@ describe("Report Worker", () => {
         REPORTS_BUCKET: {} as any,
         D1_SERVICE: {} as any,
         TELEGRAM_SERVICE: {} as any,
-        CF_API_TOKEN_BINDING: "token",
-        ACCOUNT_ID: "account123",
+        BROWSER: {} as any,
         INTERNAL_KEY_BINDING: "key",
         REPORT_WORKER_URL: "https://example.com",
       };
@@ -683,252 +677,165 @@ describe("Report Worker", () => {
     });
   });
 
+  // Module-level helper used by both "PDF Generation" and "Report Generation Pipeline" tests
+  function mockQuickActionPdf(): any {
+    return {
+      quickAction: mock(async (action: string, _params: any) => {
+        if (action !== "pdf") {
+          return new Response("Unknown action", { status: 400 });
+        }
+        const pdfBuffer = new Uint8Array([
+          0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
+        ]);
+        return new Response(pdfBuffer.buffer, {
+          status: 200,
+          headers: { "Content-Type": "application/pdf" },
+        });
+      }),
+    };
+  }
+
   describe("PDF Generation", () => {
     describe("Basic PDF Generation", () => {
       it("generates valid PDF from HTML", async () => {
         const html = "<html><body>Test Report</body></html>";
         const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
+          BROWSER: mockQuickActionPdf(),
         };
 
-        // Mock fetch for Browser Rendering API
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          const pdfBuffer = new Uint8Array([
-            0x25,
-            0x50,
-            0x44,
-            0x46,
-            0x2d,
-            0x31,
-            0x2e,
-            0x34, // %PDF-1.4
-          ]);
-          return new Response(pdfBuffer.buffer, {
-            status: 200,
-            headers: { "Content-Type": "application/pdf" },
-          });
-        }) as any;
-
-        try {
-          const pdf = await generatePdf(html, env as any);
-          expect(pdf).toBeDefined();
-          expect(pdf.byteLength).toBeGreaterThan(0);
-        } finally {
-          globalThis.fetch = originalFetch;
-        }
+        const pdf = await generatePdf(html, env as any);
+        expect(pdf).toBeDefined();
+        expect(pdf.byteLength).toBeGreaterThan(0);
       });
 
       it("PDF starts with PDF magic bytes", async () => {
         const html = "<html><body>Test</body></html>";
         const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
+          BROWSER: mockQuickActionPdf(),
         };
 
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          const pdfBuffer = new Uint8Array([
-            0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-          ]);
-          return new Response(pdfBuffer.buffer, { status: 200 });
-        }) as any;
-
-        try {
-          const pdf = await generatePdf(html, env as any);
-          const view = new Uint8Array(pdf);
-          expect(view[0]).toBe(0x25); // %
-          expect(view[1]).toBe(0x50); // P
-          expect(view[2]).toBe(0x44); // D
-          expect(view[3]).toBe(0x46); // F
-        } finally {
-          globalThis.fetch = originalFetch;
-        }
+        const pdf = await generatePdf(html, env as any);
+        const view = new Uint8Array(pdf);
+        expect(view[0]).toBe(0x25); // %
+        expect(view[1]).toBe(0x50); // P
+        expect(view[2]).toBe(0x44); // D
+        expect(view[3]).toBe(0x46); // F
       });
 
       it("handles HTML with special characters", async () => {
         const html = "<html><body>Test <>&\"'</body></html>";
         const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
+          BROWSER: mockQuickActionPdf(),
         };
 
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          const pdfBuffer = new Uint8Array([
-            0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-          ]);
-          return new Response(pdfBuffer.buffer, { status: 200 });
-        }) as any;
-
-        try {
-          const pdf = await generatePdf(html, env as any);
-          expect(pdf).toBeDefined();
-          expect(pdf.byteLength).toBeGreaterThan(0);
-        } finally {
-          globalThis.fetch = originalFetch;
-        }
+        const pdf = await generatePdf(html, env as any);
+        expect(pdf).toBeDefined();
+        expect(pdf.byteLength).toBeGreaterThan(0);
       });
 
       it("handles HTML with unicode characters", async () => {
         const html = "<html><body>Test 🚀 ✅ 你好</body></html>";
         const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
+          BROWSER: mockQuickActionPdf(),
         };
 
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          const pdfBuffer = new Uint8Array([
-            0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-          ]);
-          return new Response(pdfBuffer.buffer, { status: 200 });
-        }) as any;
-
-        try {
-          const pdf = await generatePdf(html, env as any);
-          expect(pdf).toBeDefined();
-        } finally {
-          globalThis.fetch = originalFetch;
-        }
+        const pdf = await generatePdf(html, env as any);
+        expect(pdf).toBeDefined();
       });
 
       it("handles large HTML content", async () => {
         const largeContent =
           "<html><body>" + "x".repeat(100000) + "</body></html>";
         const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
+          BROWSER: mockQuickActionPdf(),
         };
 
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          const pdfBuffer = new Uint8Array([
-            0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-          ]);
-          return new Response(pdfBuffer.buffer, { status: 200 });
-        }) as any;
-
-        try {
-          const pdf = await generatePdf(largeContent, env as any);
-          expect(pdf).toBeDefined();
-        } finally {
-          globalThis.fetch = originalFetch;
-        }
+        const pdf = await generatePdf(largeContent, env as any);
+        expect(pdf).toBeDefined();
       });
 
       it("handles minimal HTML", async () => {
         const html = "<html></html>";
         const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
+          BROWSER: mockQuickActionPdf(),
         };
 
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          const pdfBuffer = new Uint8Array([
-            0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-          ]);
-          return new Response(pdfBuffer.buffer, { status: 200 });
-        }) as any;
-
-        try {
-          const pdf = await generatePdf(html, env as any);
-          expect(pdf).toBeDefined();
-        } finally {
-          globalThis.fetch = originalFetch;
-        }
+        const pdf = await generatePdf(html, env as any);
+        expect(pdf).toBeDefined();
       });
     });
 
     describe("PDF Generation Error Handling", () => {
-      it("throws error when API token is missing", async () => {
+      it("throws error when BROWSER binding is missing", async () => {
         const html = "<html><body>Test</body></html>";
         const env: MockEnv = {
-          // Missing CF_API_TOKEN_BINDING
-          ACCOUNT_ID: "test-account",
+          // Missing BROWSER binding
         };
-
-        const pdf = await generatePdf(html, env as any);
-        // Should return fallback text instead of throwing
-        expect(pdf).toBeDefined();
-        const text = new TextDecoder().decode(pdf);
-        expect(text).toContain("PDF generation requires");
-      });
-
-      it("throws error on API failure", async () => {
-        const html = "<html><body>Test</body></html>";
-        const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
-        };
-
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          return new Response("API Error", { status: 500 });
-        }) as any;
 
         try {
-          try {
-            await generatePdf(html, env as any);
-            expect(true).toBe(false); // Should throw
-          } catch (e) {
-            expect(e).toBeInstanceOf(Error);
-            expect((e as Error).message).toContain(
-              "Browser Rendering API error"
-            );
-          }
-        } finally {
-          globalThis.fetch = originalFetch;
+          await generatePdf(html, env as any);
+          expect(true).toBe(false); // Should throw
+        } catch (e) {
+          expect(e).toBeInstanceOf(Error);
+          expect((e as Error).message).toContain("BROWSER");
         }
       });
 
-      it("handles API timeout", async () => {
+      it("throws error on PDF action failure", async () => {
         const html = "<html><body>Test</body></html>";
         const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
+          BROWSER: {
+            quickAction: mock(async (action: string) => {
+              if (action === "pdf") {
+                return new Response("PDF Error", { status: 500 });
+              }
+              return new Response("Unknown action", { status: 400 });
+            }),
+          },
         };
 
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          throw new Error("Request timeout");
-        }) as any;
-
         try {
-          try {
-            await generatePdf(html, env as any);
-            expect(true).toBe(false); // Should throw
-          } catch (e) {
-            expect(e).toBeInstanceOf(Error);
-          }
-        } finally {
-          globalThis.fetch = originalFetch;
+          await generatePdf(html, env as any);
+          expect(true).toBe(false); // Should throw
+        } catch (e) {
+          expect(e).toBeInstanceOf(Error);
+          expect((e as Error).message).toContain("Browser Rendering PDF error");
         }
       });
 
-      it("handles invalid API response", async () => {
+      it("handles PDF action timeout", async () => {
         const html = "<html><body>Test</body></html>";
         const env: MockEnv = {
-          CF_API_TOKEN_BINDING: "test-token",
-          ACCOUNT_ID: "test-account",
+          BROWSER: {
+            quickAction: mock(async () => {
+              throw new Error("Request timeout");
+            }),
+          },
         };
 
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mock(async () => {
-          return new Response("Invalid response", { status: 400 });
-        }) as any;
+        try {
+          await generatePdf(html, env as any);
+          expect(true).toBe(false); // Should throw
+        } catch (e) {
+          expect(e).toBeInstanceOf(Error);
+        }
+      });
+
+      it("handles invalid PDF response", async () => {
+        const html = "<html><body>Test</body></html>";
+        const env: MockEnv = {
+          BROWSER: {
+            quickAction: mock(async () => {
+              return new Response("Invalid response", { status: 400 });
+            }),
+          },
+        };
 
         try {
-          try {
-            await generatePdf(html, env as any);
-            expect(true).toBe(false); // Should throw
-          } catch (e) {
-            expect(e).toBeInstanceOf(Error);
-          }
-        } finally {
-          globalThis.fetch = originalFetch;
+          await generatePdf(html, env as any);
+          expect(true).toBe(false); // Should throw
+        } catch (e) {
+          expect(e).toBeInstanceOf(Error);
         }
       });
     });
@@ -1079,19 +986,18 @@ describe("Report Worker", () => {
   });
 
   describe("Portfolio Summary Fetching", () => {
-    it("returns fallback when D1_SERVICE is not configured", async () => {
+    it("throws error when D1_SERVICE is not configured", async () => {
       const env: MockEnv = {
         // No D1_SERVICE
       };
 
-      const summary = await fetchPortfolioSummary(env as any);
-      expect(summary).toBeDefined();
-      expect(summary.totalValue).toBe(0);
-      expect(summary.dailyPnL).toBe(0);
-      expect(summary.totalPnL).toBe(0);
-      expect(summary.openPositions).toBe(0);
-      expect(summary.winRate).toBe(0);
-      expect(summary.topAsset).toBe("N/A");
+      try {
+        await fetchPortfolioSummary(env as any);
+        expect(true).toBe(false); // Should throw
+      } catch (e) {
+        expect(e).toBeInstanceOf(Error);
+        expect((e as Error).message).toContain("D1_SERVICE");
+      }
     });
 
     it("fetches portfolio data from D1 service", async () => {
@@ -1138,7 +1044,7 @@ describe("Report Worker", () => {
       expect(summary.openPositions).toBe(2);
     });
 
-    it("handles D1 service errors gracefully", async () => {
+    it("throws error on D1 service failure", async () => {
       const mockD1Service = {
         fetch: mock(async () => {
           return new Response(JSON.stringify({ success: false }), {
@@ -1151,9 +1057,12 @@ describe("Report Worker", () => {
         D1_SERVICE: mockD1Service as any,
       };
 
-      const summary = await fetchPortfolioSummary(env as any);
-      expect(summary).toBeDefined();
-      expect(summary.totalValue).toBe(0);
+      try {
+        await fetchPortfolioSummary(env as any);
+        expect(true).toBe(false); // Should throw
+      } catch (e) {
+        expect(e).toBeInstanceOf(Error);
+      }
     });
 
     it("calculates win rate correctly", async () => {
@@ -1316,7 +1225,7 @@ describe("Report Worker", () => {
       await sendNotification(env as any, "reports/daily-123.pdf", summary);
     });
 
-    it("uses default worker URL when not configured", async () => {
+    it("skips notification when REPORT_WORKER_URL is not configured", async () => {
       const mockTelegramService = {
         fetch: mock(async () => {
           return new Response(JSON.stringify({ success: true }), {
@@ -1340,7 +1249,8 @@ describe("Report Worker", () => {
       };
 
       await sendNotification(env as any, "reports/daily-123.pdf", summary);
-      expect(mockTelegramService.fetch).toHaveBeenCalled();
+      // Should skip notification, so fetch should NOT be called
+      expect(mockTelegramService.fetch).not.toHaveBeenCalled();
     });
 
     it("includes portfolio metrics in notification", async () => {
@@ -1399,6 +1309,10 @@ describe("Report Worker", () => {
   });
 
   describe("Report Generation Pipeline", () => {
+    function mockPipelineBrowser(): any {
+      return mockQuickActionPdf();
+    }
+
     it("generates and stores report successfully", async () => {
       const mockR2Bucket = {
         put: mock(async () => {
@@ -1445,26 +1359,13 @@ describe("Report Worker", () => {
         REPORTS_BUCKET: mockR2Bucket as any,
         D1_SERVICE: mockD1Service as any,
         TELEGRAM_SERVICE: mockTelegramService as any,
-        CF_API_TOKEN_BINDING: "test-token",
-        ACCOUNT_ID: "test-account",
+        BROWSER: mockPipelineBrowser(),
       };
 
       const ctx = createMockContext();
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = mock(async () => {
-        const pdfBuffer = new Uint8Array([
-          0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-        ]);
-        return new Response(pdfBuffer.buffer, { status: 200 });
-      }) as any;
-
-      try {
-        await generateAndStoreReport(env as any, ctx);
-        expect(mockR2Bucket.put).toHaveBeenCalled();
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      await generateAndStoreReport(env as any, ctx);
+      expect(mockR2Bucket.put).toHaveBeenCalled();
     });
 
     it("stores PDF with correct key format", async () => {
@@ -1506,27 +1407,14 @@ describe("Report Worker", () => {
       const env: MockEnv = {
         REPORTS_BUCKET: mockR2Bucket as any,
         D1_SERVICE: mockD1Service as any,
-        CF_API_TOKEN_BINDING: "test-token",
-        ACCOUNT_ID: "test-account",
+        BROWSER: mockPipelineBrowser(),
       };
 
       const ctx = createMockContext();
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = mock(async () => {
-        const pdfBuffer = new Uint8Array([
-          0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-        ]);
-        return new Response(pdfBuffer.buffer, { status: 200 });
-      }) as any;
-
-      try {
-        await generateAndStoreReport(env as any, ctx);
-        expect(capturedKey).toBeDefined();
-        expect(capturedKey).toMatch(/^reports\/daily-\d+\.pdf$/);
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      await generateAndStoreReport(env as any, ctx);
+      expect(capturedKey).toBeDefined();
+      expect(capturedKey).toMatch(/^reports\/daily-\d+\.pdf$/);
     });
 
     it("handles report generation errors gracefully", async () => {
@@ -1538,13 +1426,11 @@ describe("Report Worker", () => {
 
       const env: MockEnv = {
         D1_SERVICE: mockD1Service as any,
-        CF_API_TOKEN_BINDING: "test-token",
-        ACCOUNT_ID: "test-account",
       };
 
       const ctx = createMockContext();
 
-      // Should not throw
+      // Should not throw (errors are caught by generateAndStoreReport)
       await generateAndStoreReport(env as any, ctx);
     });
 
@@ -1591,24 +1477,11 @@ describe("Report Worker", () => {
       const env: MockEnv = {
         REPORTS_BUCKET: mockR2Bucket as any,
         D1_SERVICE: mockD1Service as any,
-        CF_API_TOKEN_BINDING: "test-token",
-        ACCOUNT_ID: "test-account",
+        BROWSER: mockPipelineBrowser(),
       };
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = mock(async () => {
-        const pdfBuffer = new Uint8Array([
-          0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-        ]);
-        return new Response(pdfBuffer.buffer, { status: 200 });
-      }) as any;
-
-      try {
-        await generateAndStoreReport(env as any, ctx);
-        // Report generation should complete without errors
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      await generateAndStoreReport(env as any, ctx);
+      // Report generation should complete without errors
     });
 
     it("handles concurrent report generation", async () => {
@@ -1648,30 +1521,17 @@ describe("Report Worker", () => {
       const env: MockEnv = {
         REPORTS_BUCKET: mockR2Bucket as any,
         D1_SERVICE: mockD1Service as any,
-        CF_API_TOKEN_BINDING: "test-token",
-        ACCOUNT_ID: "test-account",
+        BROWSER: mockPipelineBrowser(),
       };
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = mock(async () => {
-        const pdfBuffer = new Uint8Array([
-          0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-        ]);
-        return new Response(pdfBuffer.buffer, { status: 200 });
-      }) as any;
+      const promises = [
+        generateAndStoreReport(env as any, createMockContext()),
+        generateAndStoreReport(env as any, createMockContext()),
+        generateAndStoreReport(env as any, createMockContext()),
+      ];
 
-      try {
-        const promises = [
-          generateAndStoreReport(env as any, createMockContext()),
-          generateAndStoreReport(env as any, createMockContext()),
-          generateAndStoreReport(env as any, createMockContext()),
-        ];
-
-        await Promise.all(promises);
-        expect(mockR2Bucket.put).toHaveBeenCalled();
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      await Promise.all(promises);
+      expect(mockR2Bucket.put).toHaveBeenCalled();
     });
 
     it("handles large portfolio data", async () => {
@@ -1721,26 +1581,13 @@ describe("Report Worker", () => {
       const env: MockEnv = {
         REPORTS_BUCKET: mockR2Bucket as any,
         D1_SERVICE: mockD1Service as any,
-        CF_API_TOKEN_BINDING: "test-token",
-        ACCOUNT_ID: "test-account",
+        BROWSER: mockPipelineBrowser(),
       };
 
       const ctx = createMockContext();
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = mock(async () => {
-        const pdfBuffer = new Uint8Array([
-          0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
-        ]);
-        return new Response(pdfBuffer.buffer, { status: 200 });
-      }) as any;
-
-      try {
-        await generateAndStoreReport(env as any, ctx);
-        expect(mockR2Bucket.put).toHaveBeenCalled();
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      await generateAndStoreReport(env as any, ctx);
+      expect(mockR2Bucket.put).toHaveBeenCalled();
     });
   });
 });

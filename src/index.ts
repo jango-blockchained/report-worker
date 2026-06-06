@@ -41,7 +41,6 @@ interface PortfolioSummary {
 
 // --- Constants ---
 
-const BROWSER_RENDERING_URL = `https://api.cloudflare.com/client/v4/accounts`;
 const REPORTS_PREFIX = "reports/";
 
 // --- Router Setup ---
@@ -99,6 +98,13 @@ async function generateAndStoreReport(
   env: Env,
   ctx: ExecutionContext
 ): Promise<void> {
+  if (!env.D1_SERVICE) {
+    logger.warn(
+      "D1_SERVICE binding not configured — skipping report generation"
+    );
+    return;
+  }
+
   try {
     const summary = await fetchPortfolioSummary(env);
     const html = buildReportHtml(summary);
@@ -127,19 +133,10 @@ export {
 // --- Helpers ---
 
 async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
-  // Default fallback if D1_SERVICE binding is not configured
-  const fallback: PortfolioSummary = {
-    totalValue: 0,
-    dailyPnL: 0,
-    totalPnL: 0,
-    openPositions: 0,
-    winRate: 0,
-    topAsset: "N/A",
-  };
-
   if (!env.D1_SERVICE) {
-    logger.warn("D1_SERVICE binding not configured — returning empty summary");
-    return fallback;
+    throw new Error(
+      "D1_SERVICE binding not configured — cannot fetch portfolio data"
+    );
   }
 
   try {
@@ -162,11 +159,9 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
     );
 
     if (!balancesRes.ok || !positionsRes.ok) {
-      logger.error("D1 service returned non-OK response", {
-        balancesStatus: balancesRes.status,
-        positionsStatus: positionsRes.status,
-      });
-      return fallback;
+      const errorMsg = `D1 service returned non-OK response: balances=${balancesRes.status}, positions=${positionsRes.status}`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
     }
 
     const [balancesData, positionsData] = await Promise.all([
@@ -216,7 +211,7 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
     };
   } catch (err) {
     logger.error("Failed to fetch portfolio summary from D1", { error: err });
-    return fallback;
+    throw err;
   }
 }
 
@@ -281,40 +276,68 @@ function buildReportHtml(summary: PortfolioSummary): string {
 </html>`;
 }
 
+/**
+ * Generate a PDF from HTML using the Cloudflare Browser Rendering binding.
+ *
+ * Uses the native `browser` Worker binding (configured in wrangler.jsonc under
+ * the `browser` key with binding name "BROWSER"). The `quickAction("pdf", ...)`
+ * method sends HTML content to the Browser Rendering service and returns a PDF
+ * buffer — this is the supported approach for Cloudflare Workers. No separate
+ * REST API call or API token is needed when using this binding.
+ */
 async function generatePdf(html: string, env: Env): Promise<ArrayBuffer> {
-  if (!env.CF_API_TOKEN_BINDING) {
-    logger.warn("No CF_API_TOKEN — returning text fallback");
-    return new TextEncoder().encode("PDF generation requires CF_API_TOKEN")
-      .buffer as ArrayBuffer;
-  }
-
-  const response = await fetch(
-    `${BROWSER_RENDERING_URL}/${env.ACCOUNT_ID}/browser-rendering/pdf`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.CF_API_TOKEN_BINDING}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        html,
-        options: {
-          format: "A4",
-          printBackground: true,
-          margin: { top: "1cm", right: "1cm", bottom: "1cm", left: "1cm" },
-        },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
+  if (!env.BROWSER) {
+    logger.error("Browser Rendering binding not configured", {
+      binding: "BROWSER",
+    });
     throw new Error(
-      `Browser Rendering API error: ${response.status} — ${text}`
+      "BROWSER (Browser Rendering) binding not configured — PDF generation unavailable"
     );
   }
 
-  return response.arrayBuffer() as Promise<ArrayBuffer>;
+  const browser = env.BROWSER as {
+    quickAction: (
+      action: string,
+      params: Record<string, unknown>
+    ) => Promise<Response>;
+  };
+
+  try {
+    const response = await browser.quickAction("pdf", {
+      html,
+      options: {
+        format: "A4",
+        printBackground: true,
+        margin: { top: "1cm", right: "1cm", bottom: "1cm", left: "1cm" },
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      logger.error("Browser Rendering PDF generation returned error", {
+        status: response.status,
+        errorBody: text?.slice(0, 500),
+        htmlLength: html.length,
+      });
+      throw new Error(
+        `Browser Rendering PDF error: ${response.status} — ${text}`
+      );
+    }
+
+    return response.arrayBuffer() as Promise<ArrayBuffer>;
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message.startsWith("Browser Rendering PDF error")
+    ) {
+      throw err; // Already logged above with full context
+    }
+    logger.error("Browser Rendering PDF generation threw exception", {
+      error: err instanceof Error ? err.message : String(err),
+      htmlLength: html.length,
+    });
+    throw err;
+  }
 }
 
 async function sendNotification(
@@ -323,11 +346,12 @@ async function sendNotification(
   summary: PortfolioSummary
 ): Promise<void> {
   if (!env.TELEGRAM_SERVICE) return;
+  if (!env.REPORT_WORKER_URL) {
+    logger.warn("REPORT_WORKER_URL not configured — skipping notification");
+    return;
+  }
 
-  // Use env-configured URL or fall back to default worker.dev domain
-  const reportBaseUrl =
-    env.REPORT_WORKER_URL ?? "report-worker.cryptolinx.workers.dev";
-  const signedUrl = `https://${reportBaseUrl}/${key}`;
+  const signedUrl = `https://${env.REPORT_WORKER_URL}/${key}`;
   const message = [
     `📊 *Daily Portfolio Report*`,
     ``,
