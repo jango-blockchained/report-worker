@@ -1,44 +1,45 @@
 {
+  // Report Worker — PDF report generation (Browser Rendering, twice-daily cron)
   "name": "report-worker",
   "account_id": "YOUR_ACCOUNT_ID",
   "main": "src/index.ts",
-  "compatibility_date": "2025-03-07",
+  "alias": {
+    "@jango-blockchained/hoox-shared/middleware": "../../packages/shared/src/middleware/index.ts",
+    "@jango-blockchained/hoox-shared/service-bindings": "../../packages/shared/src/service-bindings.ts",
+    "@jango-blockchained/hoox-shared/router": "../../packages/shared/src/router.ts",
+    "@jango-blockchained/hoox-shared/health": "../../packages/shared/src/health.ts"
+  },
+  "compatibility_date": "2026-06-08",
   "compatibility_flags": ["nodejs_compat"],
-
-  // PLACEMENT: Smart Placement for low-latency PDF generation (free, all plans)
   "placement": {
     "mode": "smart"
   },
-
-  // OBSERVABILITY: Enable logging and sampling
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   },
-
-  // TRIGGERS: Twice-daily report generation (06:00 + 18:00 UTC)
   "triggers": {
     "crons": ["0 8 * * *", "0 18 * * *"]
   },
-
-  // R2_BUCKETS: Storage for generated PDF reports
-  // BUCKET_NAME: Get from Cloudflare Dashboard > R2
   "r2_buckets": [
     {
       "binding": "REPORTS_BUCKET",
-      "bucket_name": "YOUR_REPORTS_BUCKET_NAME"
+      "bucket_name": "trade-reports"
     }
   ],
-
-  // VARS: Secrets set via `wrangler secret put`
-  "vars": {
-    // CF_API_TOKEN: Cloudflare API token with Browser Rendering + R2 write permissions
-    // Set via: wrangler secret put CF_API_TOKEN_BINDING
-    "CF_API_TOKEN_BINDING": null
+  "browser": {
+    "binding": "BROWSER"
   },
-
-  // SERVICES: Service bindings to other workers
+  // NOTE: INTERNAL_KEY_BINDING must be created via `wrangler secret put`.
+  "vars": {
+    "ACCOUNT_ID": "YOUR_ACCOUNT_ID"
+  },
   "services": [
+    {
+      "binding": "D1_SERVICE",
+      "service": "d1-worker"
+    },
     {
       "binding": "TELEGRAM_SERVICE",
       "service": "telegram-worker"

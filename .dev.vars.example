@@ -1,0 +1,6 @@
+# Report Worker Environment Variables (local development)
+# Copy to .dev.vars and replace with actual values from `hoox setup` output.
+# .dev.vars is gitignored — never commit secrets.
+
+# Internal auth key used by createInternalAuthMiddleware()
+INTERNAL_KEY_BINDING=your_internal_key_binding_here
