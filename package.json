@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Automated PDF report generation via Cloudflare Browser Rendering",
-  "license": "MIT",
+  "license": "CC-BY-4.0",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
@@ -18,5 +18,6 @@
     "@cloudflare/workers-types": "^4.20260527.1",
     "typescript": "^6.0.3",
     "wrangler": "^4.95.0"
-  }
+  },
+  "author": "jango-blockchained"
 }
