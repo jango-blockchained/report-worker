@@ -58,7 +58,7 @@ router.get(
 router.get(
   "/report",
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(generateAndStoreReport(env, ctx));
+    ctx.waitUntil(generateAndStoreReport(env, ctx).catch((err) => logger.error("generateAndStoreReport failed", { error: String(err) })));
     return createJsonResponse(
       { success: true, message: "Report generation started" },
       202
@@ -73,7 +73,7 @@ const cronHandler = createCronHandler<Env>({
   name: "report-worker",
   logger,
   handler: async (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(generateAndStoreReport(env, ctx));
+    ctx.waitUntil(generateAndStoreReport(env, ctx).catch((err) => logger.error("generateAndStoreReport failed", { error: String(err) })));
   },
 });
 
@@ -114,7 +114,7 @@ async function generateAndStoreReport(
       httpMetadata: { contentType: "application/pdf" },
     });
     // Notification is fire-and-forget: don't block on it
-    ctx.waitUntil(sendNotification(env, key, summary));
+    ctx.waitUntil(sendNotification(env, key, summary).catch((err) => logger.error("sendNotification failed", { error: String(err) })));
   } catch (err) {
     logger.error("Failed to generate report", { error: err });
   }
