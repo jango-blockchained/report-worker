@@ -58,7 +58,11 @@ router.get(
 router.get(
   "/report",
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(generateAndStoreReport(env, ctx).catch((err) => logger.error("generateAndStoreReport failed", { error: String(err) })));
+    ctx.waitUntil(
+      generateAndStoreReport(env, ctx).catch((err) =>
+        logger.error("generateAndStoreReport failed", { error: String(err) })
+      )
+    );
     return createJsonResponse(
       { success: true, message: "Report generation started" },
       202
@@ -73,7 +77,11 @@ const cronHandler = createCronHandler<Env>({
   name: "report-worker",
   logger,
   handler: async (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(generateAndStoreReport(env, ctx).catch((err) => logger.error("generateAndStoreReport failed", { error: String(err) })));
+    ctx.waitUntil(
+      generateAndStoreReport(env, ctx).catch((err) =>
+        logger.error("generateAndStoreReport failed", { error: String(err) })
+      )
+    );
   },
 });
 
@@ -114,7 +122,11 @@ async function generateAndStoreReport(
       httpMetadata: { contentType: "application/pdf" },
     });
     // Notification is fire-and-forget: don't block on it
-    ctx.waitUntil(sendNotification(env, key, summary).catch((err) => logger.error("sendNotification failed", { error: String(err) })));
+    ctx.waitUntil(
+      sendNotification(env, key, summary).catch((err) =>
+        logger.error("sendNotification failed", { error: String(err) })
+      )
+    );
   } catch (err) {
     logger.error("Failed to generate report", { error: err });
   }
@@ -144,19 +156,16 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
       ? { "X-Internal-Auth-Key": env.INTERNAL_KEY_BINDING }
       : {};
 
-    const balancesRes = await serviceFetch(
-      env.D1_SERVICE,
-      "/api/balances",
-      undefined,
-      { method: "GET", headers: authHeaders }
-    );
-
-    const positionsRes = await serviceFetch(
-      env.D1_SERVICE,
-      "/api/positions",
-      undefined,
-      { method: "GET", headers: authHeaders }
-    );
+    const [balancesRes, positionsRes] = await Promise.all([
+      serviceFetch(env.D1_SERVICE, "/api/balances", undefined, {
+        method: "GET",
+        headers: authHeaders,
+      }),
+      serviceFetch(env.D1_SERVICE, "/api/positions", undefined, {
+        method: "GET",
+        headers: authHeaders,
+      }),
+    ]);
 
     if (!balancesRes.ok || !positionsRes.ok) {
       const errorMsg = `D1 service returned non-OK response: balances=${balancesRes.status}, positions=${positionsRes.status}`;
@@ -303,7 +312,7 @@ async function generatePdf(html: string, env: Env): Promise<ArrayBuffer> {
   };
 
   try {
-    const response = await browser.quickAction("pdf", {
+    const pdfPromise = browser.quickAction("pdf", {
       html,
       options: {
         format: "A4",
@@ -311,6 +320,13 @@ async function generatePdf(html: string, env: Env): Promise<ArrayBuffer> {
         margin: { top: "1cm", right: "1cm", bottom: "1cm", left: "1cm" },
       },
     });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("PDF generation timed out after 60s")),
+        60000
+      )
+    );
+    const response = await Promise.race([pdfPromise, timeoutPromise]);
 
     if (!response.ok) {
       const text = await response.text();
