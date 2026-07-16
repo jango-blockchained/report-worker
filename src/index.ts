@@ -17,7 +17,10 @@ import {
 } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
-import { authenticatedServiceFetch } from "@jango-blockchained/hoox-shared/service-bindings";
+import {
+  authenticatedServiceFetch,
+  D1_READ_AUTH_KEY_FIELDS,
+} from "@jango-blockchained/hoox-shared/service-bindings";
 import { createCronHandler } from "@jango-blockchained/hoox-shared/cron-handler";
 
 import { createJsonResponse } from "@jango-blockchained/hoox-shared/errors";
@@ -152,18 +155,14 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
   }
 
   try {
-    if (!env.INTERNAL_KEY_BINDING) {
-      throw new Error(
-        "INTERNAL_KEY_BINDING not configured — cannot fetch portfolio data"
-      );
-    }
-
     const [balancesRes, positionsRes] = await Promise.all([
       authenticatedServiceFetch(env.D1_SERVICE, env, "/api/balances", undefined, {
         method: "GET",
+        internalKeyFields: D1_READ_AUTH_KEY_FIELDS,
       }),
       authenticatedServiceFetch(env.D1_SERVICE, env, "/api/positions", undefined, {
         method: "GET",
+        internalKeyFields: D1_READ_AUTH_KEY_FIELDS,
       }),
     ]);
 
