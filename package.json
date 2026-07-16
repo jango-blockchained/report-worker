@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Automated PDF report generation via Cloudflare Browser Rendering",
-  "license": "CC-BY-4.0",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
