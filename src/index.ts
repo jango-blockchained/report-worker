@@ -157,14 +157,26 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
 
   try {
     const [balancesRes, positionsRes] = await Promise.all([
-      authenticatedServiceFetch(env.D1_SERVICE, env, "/api/balances", undefined, {
-        method: "GET",
-        internalKeyFields: D1_READ_AUTH_KEY_FIELDS,
-      }),
-      authenticatedServiceFetch(env.D1_SERVICE, env, "/api/positions", undefined, {
-        method: "GET",
-        internalKeyFields: D1_READ_AUTH_KEY_FIELDS,
-      }),
+      authenticatedServiceFetch(
+        env.D1_SERVICE,
+        env,
+        "/api/balances",
+        undefined,
+        {
+          method: "GET",
+          internalKeyFields: D1_READ_AUTH_KEY_FIELDS,
+        }
+      ),
+      authenticatedServiceFetch(
+        env.D1_SERVICE,
+        env,
+        "/api/positions",
+        undefined,
+        {
+          method: "GET",
+          internalKeyFields: D1_READ_AUTH_KEY_FIELDS,
+        }
+      ),
     ]);
 
     if (!balancesRes.ok || !positionsRes.ok) {
@@ -408,7 +420,13 @@ async function sendNotification(
     payload: { message, chatId: undefined },
   };
 
-  await authenticatedServiceFetch(env.TELEGRAM_SERVICE, env, "/alert", payload, {
-    internalKeyFields: TELEGRAM_ALERT_AUTH_KEY_FIELDS,
-  });
+  await authenticatedServiceFetch(
+    env.TELEGRAM_SERVICE,
+    env,
+    "/alert",
+    payload,
+    {
+      internalKeyFields: TELEGRAM_ALERT_AUTH_KEY_FIELDS,
+    }
+  );
 }
