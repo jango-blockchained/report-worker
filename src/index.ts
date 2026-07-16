@@ -20,6 +20,7 @@ import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 import {
   authenticatedServiceFetch,
   D1_READ_AUTH_KEY_FIELDS,
+  TELEGRAM_ALERT_AUTH_KEY_FIELDS,
 } from "@jango-blockchained/hoox-shared/service-bindings";
 import { createCronHandler } from "@jango-blockchained/hoox-shared/cron-handler";
 
@@ -407,5 +408,7 @@ async function sendNotification(
     payload: { message, chatId: undefined },
   };
 
-  await authenticatedServiceFetch(env.TELEGRAM_SERVICE, env, "/alert", payload);
+  await authenticatedServiceFetch(env.TELEGRAM_SERVICE, env, "/alert", payload, {
+    internalKeyFields: TELEGRAM_ALERT_AUTH_KEY_FIELDS,
+  });
 }
