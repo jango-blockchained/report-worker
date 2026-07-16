@@ -17,7 +17,7 @@ import {
 } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
-import { serviceFetch } from "@jango-blockchained/hoox-shared/service-bindings";
+import { authenticatedServiceFetch } from "@jango-blockchained/hoox-shared/service-bindings";
 import { createCronHandler } from "@jango-blockchained/hoox-shared/cron-handler";
 
 import { createJsonResponse } from "@jango-blockchained/hoox-shared/errors";
@@ -152,18 +152,18 @@ async function fetchPortfolioSummary(env: Env): Promise<PortfolioSummary> {
   }
 
   try {
-    const authHeaders: Record<string, string> = env.INTERNAL_KEY_BINDING
-      ? { "X-Internal-Auth-Key": env.INTERNAL_KEY_BINDING }
-      : {};
+    if (!env.INTERNAL_KEY_BINDING) {
+      throw new Error(
+        "INTERNAL_KEY_BINDING not configured — cannot fetch portfolio data"
+      );
+    }
 
     const [balancesRes, positionsRes] = await Promise.all([
-      serviceFetch(env.D1_SERVICE, "/api/balances", undefined, {
+      authenticatedServiceFetch(env.D1_SERVICE, env, "/api/balances", undefined, {
         method: "GET",
-        headers: authHeaders,
       }),
-      serviceFetch(env.D1_SERVICE, "/api/positions", undefined, {
+      authenticatedServiceFetch(env.D1_SERVICE, env, "/api/positions", undefined, {
         method: "GET",
-        headers: authHeaders,
       }),
     ]);
 
@@ -404,14 +404,9 @@ async function sendNotification(
   ].join("\n");
 
   // Construct the payload expected by telegram-worker's /process endpoint
-  const internalAuthKey = env.INTERNAL_KEY_BINDING;
   const payload = {
     payload: { message, chatId: undefined },
   };
 
-  await serviceFetch(env.TELEGRAM_SERVICE, "/alert", payload, {
-    headers: {
-      ...(internalAuthKey ? { "X-Internal-Auth-Key": internalAuthKey } : {}),
-    },
-  });
+  await authenticatedServiceFetch(env.TELEGRAM_SERVICE, env, "/alert", payload);
 }
